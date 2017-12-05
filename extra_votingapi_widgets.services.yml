@@ -1,0 +1,8 @@
+services:
+
+  extra_votingapi_widgets.lazy_builder:
+    class: Drupal\extra_votingapi_widgets\LazyBuilder\VotingApiWidgetLazyBuilder
+
+  extra_votingapi_widgets.plugin.manager.votingapi.resultfunction:
+      class: Drupal\extra_votingapi_widgets\Plugin\ComplexVoteResultFunctionManager
+      parent: plugin.manager.votingapi.resultfunction

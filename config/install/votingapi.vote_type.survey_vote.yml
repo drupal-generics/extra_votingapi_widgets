@@ -1,0 +1,4 @@
+id: survey_vote
+label: 'Survey vote'
+value_type: 'id'
+description: 'The survey tag for votes on content.'

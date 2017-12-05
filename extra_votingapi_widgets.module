@@ -1,0 +1,151 @@
+<?php
+
+/**
+ * @file
+ * Contains extra_votingapi_widgets.module.
+ */
+
+use Drupal\core\Entity\EntityTypeInterface;
+use Drupal\Core\Field\BaseFieldDefinition;
+use Drupal\votingapi\VoteInterface;
+use Drupal\Core\Form\FormStateInterface;
+
+/**
+ * Implements hook_entity_bundle_field_info_alter().
+ *
+ * @see \Drupal\extra_votingapi_widgets\Plugin\Field\FieldType\VotingApiSurveyItem
+ *   Adds validation for all 'survey' voting api field instances on nodes.
+ * @see \Drupal\extra_votingapi_widgets\Plugin\Validation\Constraint\VotingApiSurveyItemConstraint
+ *   Custom validation.
+ */
+function extra_votingapi_widgets_entity_bundle_field_info_alter(&$fields, EntityTypeInterface $entity_type, $bundle) {
+  if ($entity_type->id() == 'node') {
+    /** @var Drupal\Core\Field\FieldDefinitionInterface $definition */
+    foreach ($fields as $name => $definition) {
+      if ($definition->getType() == 'voting_api_survey_field') {
+        // Require at least two answers.
+        $fields[$name]->addConstraint('Count', [
+          'min' => 2,
+        ]);
+        // Custom validation.
+        $fields[$name]->addConstraint('VotingApiSurveyItem', []);
+      }
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_base_field_info().
+ *
+ * @see \Drupal\votingapi\Entity\VoteResult
+ *   Update the VoteResult entity type to have the 'complex_value' base field
+ *   which is going to store the complex value of the vote result as a
+ *   serialized string.
+ * @see \Drupal\extra_votingapi_widgets\Plugin\ComplexVoteResultFunctionManager
+ */
+function extra_votingapi_widgets_entity_base_field_info(EntityTypeInterface $entity_type) {
+  if ($entity_type->id() != 'vote_result') {
+    return [];
+  }
+
+  $fields = [];
+
+  $fields['complex_value'] = BaseFieldDefinition::create('map')
+    ->setLabel(t('Complex value'))
+    ->setDescription(t('The complex value of the vote.'));
+
+  return $fields;
+}
+
+/**
+ * Implements hook_entity_type_build().
+ *
+ * @see votingapi_widgets_entity_type_build()
+ */
+function extra_votingapi_widgets_entity_type_build(array &$entity_types) {
+  $entity_types['vote']->setFormClass('extra_votingapi_widgets_survey', 'Drupal\extra_votingapi_widgets\Form\VotingApiSurveyForm');
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for vote.
+ *
+ * @see \Drupal\votingapi\Entity\Vote::postSave()
+ * @see _extra_votingapi_widgets_recalculate_results()
+ */
+function extra_votingapi_widgets_vote_insert(VoteInterface $vote) {
+  _extra_votingapi_widgets_recalculate_results($vote);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for vote.
+ *
+ * @see \Drupal\votingapi\Entity\Vote::postSave()
+ * @see _extra_votingapi_widgets_recalculate_results()
+ */
+function extra_votingapi_widgets_vote_update(VoteInterface $vote) {
+  _extra_votingapi_widgets_recalculate_results($vote);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_delete() for vote.
+ *
+ * @see \Drupal\votingapi\Entity\Vote::postDelete()
+ * @see _extra_votingapi_widgets_recalculate_results(
+ */
+function extra_votingapi_widgets_vote_delete(VoteInterface $vote) {
+  _extra_votingapi_widgets_recalculate_results($vote, TRUE);
+}
+
+/**
+ * Helper method; recalculates the complex vote results.
+ *
+ * @param \Drupal\votingapi\VoteInterface $vote
+ *   Vote instance which triggered the recalculation of vote results.
+ * @param bool $skip_check
+ *   (optional) TRUE if skip the calculation schedule. Defaults to FALSE. The
+ *   voting api skips the check after a vote delete operation, maybe only by
+ *   mistake.
+ *
+ * @see \Drupal\votingapi\Entity\Vote::postDelete()
+ */
+function _extra_votingapi_widgets_recalculate_results(VoteInterface $vote, $skip_check = FALSE) {
+  $conditions = (
+    $skip_check
+    || (\Drupal::config('votingapi.settings')
+      ->get('calculation_schedule') == 'immediate')
+  );
+  if ($conditions) {
+    \Drupal::service('extra_votingapi_widgets.plugin.manager.votingapi.resultfunction')
+      ->recalculateResults(
+        $vote->getVotedEntityType(),
+        $vote->getVotedEntityId(),
+        $vote->bundle()
+      );
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for field_config_edit_form.
+ *
+ * Skip the default value(s) validation for 'survey' voting api field instances.
+ *
+ * @see extra_votingapi_widgets_entity_bundle_field_info_alter()
+ *   Validation constraints on 'survey' voting api field instances.
+ * @see \Drupal\field_ui\Form\FieldConfigEditForm::form()
+ *   Default value form element using the field's widget.
+ * @see \Drupal\field_ui\Form\FieldConfigEditForm::validateForm()
+ *   Field default value validation.
+ */
+function extra_votingapi_widgets_form_field_config_edit_form_alter(&$form, FormStateInterface $form_state) {
+  if (isset($form['default_value'])) {
+    /** @var \Drupal\field_ui\Form\FieldConfigEditForm $field_config_edit_form */
+    $field_config_edit_form = $form_state->getFormObject();
+    /** @var \Drupal\field\Entity\FieldConfig $field_config */
+    $field_config = $field_config_edit_form->getEntity();
+
+    $field_type = $field_config->getType();
+    if ($field_type == 'voting_api_survey_field') {
+      unset($form['default_value']);
+    }
+  }
+}

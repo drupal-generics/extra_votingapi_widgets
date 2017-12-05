@@ -1,0 +1,9 @@
+name: Extra Voting API Widgets
+type: module
+description: 'Provides additional voting API widgets.'
+core: 8.x
+package: votingapi
+
+dependencies:
+  - votingapi_widgets
+  - apsys_color_scheme
